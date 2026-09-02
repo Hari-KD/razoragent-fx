@@ -1,0 +1,41 @@
+{
+  "name": "razoragent-fx",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@langchain/openai": "^1.5.8",
+    "@radix-ui/react-dialog": "^1.1.23",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "jspdf": "^4.2.1",
+    "langchain": "^1.5.10",
+    "lucide-react": "^1.33.0",
+    "next": "14.2.35",
+    "openai": "^6.49.0",
+    "pdf-parse": "^2.4.5",
+    "razorpay": "^2.9.8",
+    "react": "^18",
+    "react-dom": "^18",
+    "recharts": "^3.10.1",
+    "tailwind-merge": "^3.6.0",
+    "tailwindcss-animate": "^1.0.7",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/pdf-parse": "^1.1.5",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.35",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5"
+  }
+}
