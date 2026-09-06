@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createRazorpayOrder } from '@/lib/razorpay'
-import { FX_RATES, addTransaction } from '@/lib/db'
+import { FX_RATES, getDynamicFxRates } from '@/lib/db'
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { amount, currency, cardCountry, cardNetwork, issuingBank, routing } = body
+    const { amount, currency, cardCountry, cardNetwork, issuingBank, routing, fxRate: customFx } = body
     if (!amount || !currency) return NextResponse.json({ error:'amount and currency required'}, { status:400 })
 
-    const fxRate = (FX_RATES as any)[currency] ?? 83
+    const rates = await getDynamicFxRates()
+    const fxRate = customFx || (rates as any)[currency] || (FX_RATES as any)[currency] || 88.45
     const amountINR = Math.round(amount * fxRate)
 
     const receipt = `rcpt_${Date.now().toString(36)}`

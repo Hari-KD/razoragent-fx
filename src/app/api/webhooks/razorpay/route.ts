@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { addTransaction, getDb, updateTransaction, FX_RATES } from '@/lib/db'
+import { addTransaction, getDb, updateTransaction, FX_RATES, getDynamicFxRates } from '@/lib/db'
 
 export async function POST(req: NextRequest) {
   try {
@@ -32,7 +32,8 @@ export async function POST(req: NextRequest) {
       savings = recent.estimatedFxSavings
     }
 
-    const fxRate = (FX_RATES as any)[currency] ?? 83
+    const rates = await getDynamicFxRates()
+    const fxRate = body.fxRate || (rates as any)[currency] || (FX_RATES as any)[currency] || 88.45
     const amountINR = Math.round(amount * fxRate)
 
     // Determine FIRC status

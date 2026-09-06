@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { Currency, RouteOption } from './db'
+import { fetchLiveFxRates, DEFAULT_FX_RATES } from './fx-rates'
 
 export const AgentInputSchema = z.object({
   amount: z.number().positive(),
@@ -8,6 +9,7 @@ export const AgentInputSchema = z.object({
   cardCountry: z.string().min(2),
   issuingBank: z.string().optional().default('Unknown'),
   cardNetwork: z.enum(['Visa','Mastercard','Amex','Discover','Unknown']).default('Visa'),
+  fxRates: z.record(z.string(), z.number()).optional(),
 })
 
 export type AgentInput = z.infer<typeof AgentInputSchema>
@@ -24,50 +26,103 @@ export type AgentOutput = {
   amountINR: number
 }
 
-// Deterministic routing logic (fallback & core)
-export function runDeterministicAgent(input: AgentInput): AgentOutput {
-  const { amount, sourceCurrency, cardCountry, cardNetwork, issuingBank } = input
+function getFxMarkup(route: RouteOption, currency: Currency): number {
+  if (currency === 'INR') return 0
+  switch (route) {
+    case 'Razorpay-Curlec Malaysia Local Rail':
+      return currency === 'MYR' ? 0.45 : 1.10
+    case 'Curlec SGD Rail':
+      return currency === 'MYR' ? 0.60 : 0.85
+    case 'Razorpay International Optimized':
+      if (currency === 'EUR') return 0.80
+      if (currency === 'GBP') return 0.75
+      if (currency === 'USD') return 0.90
+      return 1.05
+    case 'UPI Global':
+      return 0.70
+    case 'Razorpay Core':
+      return 1.10
+    case 'Direct Bank Rail (SWIFT)':
+      if (currency === 'MYR') return 2.60
+      if (currency === 'GBP') return 2.40
+      if (currency === 'EUR') return 2.25
+      return 2.10
+    default:
+      return 1.20
+  }
+}
 
-  const FX: Record<string, number> = { USD:83.30, EUR:90.14, MYR:17.75, GBP:105.80, INR:1 }
-  const fxRate = FX[sourceCurrency] ?? 83
+// Deterministic routing logic (fallback & core)
+export async function runDeterministicAgent(input: AgentInput): Promise<AgentOutput> {
+  const { amount, sourceCurrency, cardCountry, cardNetwork, issuingBank, fxRates: customRates } = input
+
+  let liveRates = customRates
+  if (!liveRates) {
+    try {
+      const data = await fetchLiveFxRates()
+      liveRates = data.rates
+    } catch {
+      liveRates = DEFAULT_FX_RATES
+    }
+  }
+
+  const fxRate = liveRates?.[sourceCurrency] ?? DEFAULT_FX_RATES[sourceCurrency] ?? 88.45
   const amountINR = Math.round(amount * fxRate)
 
-  // gateway success rate simulation
-  const routes: Record<RouteOption, { base: number, fxMarkup: number }> = {
-    'Razorpay Core': { base: 0.88, fxMarkup: 1.1 },
-    'Razorpay International Optimized': { base: 0.93, fxMarkup: 0.9 },
-    'Razorpay-Curlec Malaysia Local Rail': { base: 0.82, fxMarkup: 0.45 },
-    'Curlec SGD Rail': { base: 0.80, fxMarkup: 0.6 },
-    'Direct Bank Rail (SWIFT)': { base: 0.76, fxMarkup: 2.1 },
-    'UPI Global': { base: 0.85, fxMarkup: 0.7 },
+  const routeList: RouteOption[] = [
+    'Razorpay Core',
+    'Razorpay International Optimized',
+    'Razorpay-Curlec Malaysia Local Rail',
+    'Curlec SGD Rail',
+    'Direct Bank Rail (SWIFT)',
+    'UPI Global'
+  ]
+
+  const routeBases: Record<RouteOption, number> = {
+    'Razorpay Core': 0.88,
+    'Razorpay International Optimized': 0.92,
+    'Razorpay-Curlec Malaysia Local Rail': 0.82,
+    'Curlec SGD Rail': 0.80,
+    'Direct Bank Rail (SWIFT)': 0.76,
+    'UPI Global': 0.85,
   }
 
   let scores: Record<RouteOption, number> = {} as any
   let reasonMap: Record<RouteOption, string[]> = {} as any
 
-  for (const r of Object.keys(routes) as RouteOption[]) {
-    let s = routes[r].base
+  for (const r of routeList) {
+    let s = routeBases[r]
     const reasons: string[] = []
+    const rMarkup = getFxMarkup(r, sourceCurrency)
+    const swiftMarkup = getFxMarkup('Direct Bank Rail (SWIFT)', sourceCurrency)
 
     // Currency corridor boosts
-    if (sourceCurrency === 'MYR' && (r.includes('Curlec'))) {
+    if (sourceCurrency === 'MYR' && r === 'Razorpay-Curlec Malaysia Local Rail') {
+      s += 0.20
+      reasons.push('MYR corridor: Curlec local clearing avoids double FX conversion & cuts cost to 0.45%')
+    } else if (sourceCurrency === 'MYR' && r.includes('Curlec')) {
       s += 0.12
-      reasons.push('MYR corridor: Curlec local clearing avoids double FX conversion & cuts cost by ~1.4%')
     }
+
     if (sourceCurrency === 'USD' && r === 'Razorpay International Optimized') {
-      s += 0.06
-      reasons.push('USD-INR highly liquid — Razorpay Intl optimal markup 0.9% vs 2.1% SWIFT')
+      s += 0.08
+      reasons.push(`USD-INR corridor liquid @ ₹${fxRate}/USD — Razorpay Intl optimal markup 0.9% vs ${swiftMarkup}% SWIFT`)
     }
     if (sourceCurrency === 'EUR' && r === 'Razorpay International Optimized') {
-      s += 0.05
-      reasons.push('EUR: Razorpay Intl hedged at 90.14 INR/EUR with dynamic FX')
+      s += 0.09
+      reasons.push(`EUR: Razorpay Intl live rate @ ${fxRate} INR/EUR with dynamic FX hedging (0.80% markup)`)
+    }
+    if (sourceCurrency === 'GBP' && r === 'Razorpay International Optimized') {
+      s += 0.08
+      reasons.push(`GBP: Direct rail active @ ${fxRate} INR/GBP (0.75% markup vs 2.4% SWIFT)`)
     }
     if (sourceCurrency === 'GBP' && r === 'Direct Bank Rail (SWIFT)') {
-      s -= 0.04
-      reasons.push('GBP SWIFT flat £12 fee erodes margin on mid-ticket')
+      s -= 0.06
+      reasons.push('GBP SWIFT flat fee erodes margin on mid-ticket')
     }
-    if (cardCountry === 'MY' && r.includes('Curlec')) s += 0.08
-    if (cardCountry === 'SG' && r === 'Curlec SGD Rail') s += 0.10
+
+    if (cardCountry === 'MY' && r === 'Razorpay-Curlec Malaysia Local Rail') s += 0.10
+    if (cardCountry === 'SG' && r === 'Curlec SGD Rail') s += 0.12
     if (cardNetwork === 'Amex' && r === 'Razorpay International Optimized') s += 0.03
     if (cardNetwork === 'Amex' && r.includes('Curlec')) s -= 0.07
 
@@ -76,16 +131,14 @@ export function runDeterministicAgent(input: AgentInput): AgentOutput {
     if (amount > 3000 && r === 'Razorpay-Curlec Malaysia Local Rail' && sourceCurrency !== 'MYR') s -= 0.08
 
     // Bank-specific
-    if (issuingBank?.toLowerCase().includes('maybank') && r.includes('Curlec')) s += 0.04
+    if (issuingBank?.toLowerCase().includes('maybank') && r.includes('Curlec')) s += 0.05
     if (issuingBank?.toLowerCase().includes('chase') && r === 'Razorpay International Optimized') s += 0.02
 
-    // FX savings inversely to markup
-    const savings = (routes['Direct Bank Rail (SWIFT)'].fxMarkup - routes[r].fxMarkup)
-    reasons.push(`FX markup ${routes[r].fxMarkup}% vs SWIFT 2.1% — saves ~${savings.toFixed(2)}%`)
+    const savingsVal = (swiftMarkup - rMarkup)
+    reasons.push(`FX markup ${rMarkup}% vs SWIFT ${swiftMarkup}% — saves ~${savingsVal.toFixed(2)}%`)
     reasons.push(`Simulated auth success ${Math.round(s*100)}% based on network/country/rail history`)
 
-    s = Math.min(0.99, Math.max(0.40, s + (Math.random()*0.02-0.01)))
-    scores[r] = s
+    scores[r] = Math.min(0.99, Math.max(0.40, s))
     reasonMap[r] = reasons
   }
 
@@ -94,22 +147,26 @@ export function runDeterministicAgent(input: AgentInput): AgentOutput {
   const best = sorted[0]
   const bestRoute = best[0]
   const bestScore = Number(best[1].toFixed(2))
-  const bestMarkup = routes[bestRoute].fxMarkup
-  const swiftMarkup = routes['Direct Bank Rail (SWIFT)'].fxMarkup
-  const savingsPct = (swiftMarkup - bestMarkup).toFixed(1) + '%'
+  const bestMarkup = getFxMarkup(bestRoute, sourceCurrency)
+  const swiftMarkup = getFxMarkup('Direct Bank Rail (SWIFT)', sourceCurrency)
+  const savingsPctVal = Math.max(0, swiftMarkup - bestMarkup)
+  const savingsRupees = Math.round(amountINR * (savingsPctVal / 100))
+  const savingsPct = savingsPctVal > 0 ? `${savingsPctVal.toFixed(1)}%` : '0%'
 
   const riskScore = Number((1 - bestScore + 0.05).toFixed(2))
   const fxEfficiency = Number((1 - bestMarkup/3).toFixed(2))
 
-  const alternatives = sorted.slice(1,3).map(([route, score]) => ({
-    route, score: Number(score.toFixed(2)), savings: (swiftMarkup - routes[route].fxMarkup).toFixed(1)+'%'
-  }))
+  const alternatives = sorted.slice(1,3).map(([route, score]) => {
+    const rMarkup = getFxMarkup(route, sourceCurrency)
+    const altSavings = Math.max(0, swiftMarkup - rMarkup).toFixed(1) + '%'
+    return { route, score: Number(score.toFixed(2)), savings: altSavings }
+  })
 
   // Build reasoning for best
   const reasoning = [
     ...reasonMap[bestRoute].slice(0,3),
     amountINR > 100000 ? `High-value INR ${amountINR.toLocaleString('en-IN')}: prioritizing success rate & hedged FX` : `Ticket sized INR ${amountINR.toLocaleString('en-IN')}: optimizing fee vs success tradeoff`,
-    `Confidence ${Math.round(bestScore*100)}% — computed from 6 factors: corridor liquidity, network, issuing bank, ticket size, FX markup, historic auth rates`,
+    `Savings vs SWIFT: ${savingsPct} (₹${savingsRupees.toLocaleString('en-IN')})`,
   ]
 
   return {
@@ -128,7 +185,7 @@ export function runDeterministicAgent(input: AgentInput): AgentOutput {
 // LLM powered agent (if OPENAI_API_KEY present)
 export async function runAiAgent(input: AgentInput): Promise<AgentOutput> {
   const apiKey = process.env.OPENAI_API_KEY
-  if (!apiKey) return runDeterministicAgent(input)
+  if (!apiKey) return await runDeterministicAgent(input)
 
   try {
     const { default: OpenAI } = await import('openai')
@@ -151,7 +208,7 @@ Be concise, fintech-specific.`
     const parsed = JSON.parse(text)
 
     // Validate & merge with deterministic fallback for missing fields
-    const deterministic = runDeterministicAgent(input)
+    const deterministic = await runDeterministicAgent(input)
     return {
       recommendedRoute: parsed.recommendedRoute ?? deterministic.recommendedRoute,
       confidenceScore: typeof parsed.confidenceScore === 'number' ? parsed.confidenceScore : deterministic.confidenceScore,
@@ -165,6 +222,6 @@ Be concise, fintech-specific.`
     }
   } catch (e) {
     console.error('OpenAI agent failed, fallback', e)
-    return runDeterministicAgent(input)
+    return await runDeterministicAgent(input)
   }
 }

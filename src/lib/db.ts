@@ -133,11 +133,23 @@ export function addInvoice(inv: Invoice) {
   db.invoices.unshift(inv)
 }
 
-// FX rates mock (vs INR)
+import { fetchLiveFxRates } from './fx-rates'
+
+// Fallback FX rates (vs INR)
 export const FX_RATES: Record<Currency, number> = {
-  USD: 83.30,
-  EUR: 90.14,
-  MYR: 17.75,
-  GBP: 105.80,
-  INR: 1,
+  USD: 88.45,
+  EUR: 96.15,
+  MYR: 20.30,
+  GBP: 114.60,
+  INR: 1.0,
 }
+
+export async function getDynamicFxRates(): Promise<Record<Currency, number>> {
+  try {
+    const live = await fetchLiveFxRates()
+    return live.rates
+  } catch {
+    return FX_RATES
+  }
+}
+

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { addInvoice, getDb } from '@/lib/db'
+import { addInvoice, getDb, getDynamicFxRates, FX_RATES } from '@/lib/db'
 
 export async function POST(req: NextRequest) {
   try {
@@ -98,10 +98,10 @@ export async function POST(req: NextRequest) {
 
     // Create dedicated payment transaction & invoice for this extracted document
     const db = getDb()
-    const fxRates: Record<string, number> = { USD: 83.30, EUR: 90.14, MYR: 17.75, GBP: 105.80, INR: 1 }
-    const rate = fxRates[extracted.currency] || 83.30
-    const amt = Number(extracted.amount) || 1500
+    const liveRates = await getDynamicFxRates()
     const currency = (extracted.currency as any) || 'USD'
+    const rate = (liveRates as any)[currency] || (FX_RATES as any)[currency] || 88.45
+    const amt = Number(extracted.amount) || 1500
     const buyerName = String(extracted.buyerName || 'International Buyer')
     const invoiceNumber = String(extracted.invoiceNumber || ('INV-' + Math.floor(1000 + Math.random() * 9000)))
     const buyerCountry = String(extracted.buyerCountry || 'US').slice(0, 2).toUpperCase()

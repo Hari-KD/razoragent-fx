@@ -1,12 +1,12 @@
 "use client"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, ShieldCheck, Sparkles, CreditCard, Globe, ArrowRight, CheckCircle2, AlertTriangle } from "lucide-react"
+import { Loader2, ShieldCheck, Sparkles, CreditCard, Globe, ArrowRight, CheckCircle2, AlertTriangle, RefreshCw } from "lucide-react"
 
 type Currency = 'USD'|'EUR'|'MYR'|'GBP'|'INR'
 type AgentResult = {
@@ -33,16 +33,41 @@ export function CheckoutModal({ onPaymentSuccess }: { onPaymentSuccess?: (tx:any
   const [agentResult, setAgentResult] = useState<AgentResult | null>(null)
   const [step, setStep] = useState<'form'|'agent'|'checkout'>('form')
   const [error, setError] = useState('')
+  const [fx, setFx] = useState<Record<Currency, number>>({ USD: 88.45, EUR: 96.15, MYR: 20.30, GBP: 114.60, INR: 1.0 })
+  const [isFxLive, setIsFxLive] = useState(false)
+  const [fxFetching, setFxFetching] = useState(false)
 
-  const fx = { USD:83.30, EUR:90.14, MYR:17.75, GBP:105.80, INR:1 } as Record<Currency, number>
-  const inr = Math.round(amount * fx[currency])
+  async function loadLiveFxRates() {
+    setFxFetching(true)
+    try {
+      const res = await fetch('/api/fx-rates')
+      const data = await res.json()
+      if (data && data.rates) {
+        setFx(data.rates)
+        setIsFxLive(!!data.isLive)
+      }
+    } catch (e) {
+      console.warn('Live FX fetch failed, using stored estimates', e)
+    } finally {
+      setFxFetching(false)
+    }
+  }
+
+  useEffect(() => {
+    loadLiveFxRates()
+    const interval = setInterval(loadLiveFxRates, 60000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const currentRate = fx[currency] ?? 1.0
+  const inr = Math.round(amount * currentRate)
 
   async function handlePreRoute() {
     setLoading(true); setError(''); setAgentResult(null)
     try {
       const res = await fetch('/api/agent/route', {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ amount, sourceCurrency: currency, targetCurrency:'INR', cardCountry, cardNetwork, issuingBank })
+        body: JSON.stringify({ amount, sourceCurrency: currency, targetCurrency:'INR', cardCountry, cardNetwork, issuingBank, fxRates: fx })
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Agent failed')
@@ -58,7 +83,7 @@ export function CheckoutModal({ onPaymentSuccess }: { onPaymentSuccess?: (tx:any
     try {
       const orderRes = await fetch('/api/checkout', {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ amount, currency, cardCountry, cardNetwork, issuingBank, routing: agentResult })
+        body: JSON.stringify({ amount, currency, cardCountry, cardNetwork, issuingBank, routing: agentResult, fxRate: currentRate })
       })
       const order = await orderRes.json()
       if (!orderRes.ok) throw new Error(order.error)
@@ -134,20 +159,35 @@ export function CheckoutModal({ onPaymentSuccess }: { onPaymentSuccess?: (tx:any
             </CardTitle>
             <CardDescription className="text-slate-300 mt-1">Razorpay Sandbox • AI routed • FIRC ready</CardDescription>
           </div>
-          <Badge variant="secondary" className="bg-white/20 text-white border-0 backdrop-blur">Sandbox Mode</Badge>
+          <Badge variant="secondary" className="bg-white/20 text-white border-0 backdrop-blur flex items-center gap-1.5">
+            {isFxLive ? (
+              <>
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                Live Rates
+              </>
+            ) : (
+              'Sandbox Mode'
+            )}
+          </Badge>
         </div>
         <div className="mt-4 grid grid-cols-3 gap-3 text-center">
-          <div className="bg-white/10 backdrop-blur rounded-lg p-2">
-            <div className="text-[10px] tracking-widest text-slate-300">FX RATE</div>
-            <div className="font-mono font-bold">1 {currency} = ₹{fx[currency]}</div>
+          <div className="bg-white/10 backdrop-blur rounded-lg p-2 relative group">
+            <div className="flex items-center justify-center gap-1 text-[10px] tracking-widest text-slate-300">
+              <span>FX RATE</span>
+              <button onClick={loadLiveFxRates} title="Refresh real-time rate" className="hover:text-cyan-300 transition-colors">
+                <RefreshCw className={`w-2.5 h-2.5 text-cyan-400 ${fxFetching ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+            <div className="font-mono font-bold text-sm sm:text-base">1 {currency} = ₹{currentRate}</div>
+            <div className="text-[9px] text-cyan-300 font-sans mt-0.5">{isFxLive ? '● Live Internet Rate' : 'Market Rate'}</div>
           </div>
           <div className="bg-white/10 backdrop-blur rounded-lg p-2">
             <div className="text-[10px] tracking-widest text-slate-300">YOU PAY</div>
-            <div className="font-mono font-bold">₹{inr.toLocaleString('en-IN')}</div>
+            <div className="font-mono font-bold text-sm sm:text-base">₹{inr.toLocaleString('en-IN')}</div>
           </div>
           <div className="bg-emerald-500/20 backdrop-blur rounded-lg p-2 border border-emerald-500/30">
             <div className="text-[10px] tracking-widest text-emerald-200">YOU SAVE</div>
-            <div className="font-mono font-bold text-emerald-300">{agentResult?.estimatedFxSavings ?? '—'}</div>
+            <div className="font-mono font-bold text-emerald-300 text-sm sm:text-base">{agentResult?.estimatedFxSavings ?? '—'}</div>
           </div>
         </div>
       </CardHeader>
