@@ -12,7 +12,7 @@ RazorAgent FX solves the three biggest pain points for Indian merchants acceptin
 
 ---
 
-## ✨ Live Demo
+## Live Demo
 
 | Surface | Route | What you can do |
 |---------|-------|-----------------|
@@ -25,7 +25,7 @@ RazorAgent FX solves the three biggest pain points for Indian merchants acceptin
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -89,7 +89,7 @@ Scoring factors: corridor liquidity, issuing bank (Chase, Maybank...), card netw
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 - **Frontend:** Next.js 14 App Router, TypeScript, Tailwind CSS, Shadcn UI, Lucide Icons, Recharts
 - **AI:** LangChain + OpenAI GPT-4o-mini (structured JSON), Zod validation, deterministic fallback engine
@@ -100,7 +100,7 @@ Scoring factors: corridor liquidity, issuing bank (Chase, Maybank...), card netw
 
 ---
 
-## 📂 File Structure (as requested)
+## File Structure (as requested)
 
 ```
 ├── src/
@@ -137,7 +137,7 @@ Scoring factors: corridor liquidity, issuing bank (Chase, Maybank...), card netw
 
 ---
 
-## 🚀 Setup
+## Setup
 
 For detailed setup instructions, see [SETUP.md](SETUP.md)
 
@@ -167,7 +167,7 @@ npm run build && npm start
 
 ---
 
-## 🔌 API Docs
+## API Docs
 
 ### `POST /api/agent/route`
 ```json
@@ -210,7 +210,7 @@ For dashboard charts & tables.
 
 ---
 
-## 🎯 Why Razorpay Should Care
+## Why Razorpay Should Care
 
 | Stakeholder | Pain today | RazorAgent FX win |
 |-------------|------------|-------------------|
@@ -222,7 +222,7 @@ For dashboard charts & tables.
 
 ---
 
-## 🧪 Production-Ready Features
+## Production-Ready Features
 
 ### Real Razorpay Integration
 - **Live payment processing** using Razorpay Test Mode API
@@ -250,13 +250,13 @@ For dashboard charts & tables.
 
 ---
 
-## 🔐 FIRC Certificate Details
+## FIRC Certificate Details
 
 RBI FED Master Direction compliant fields: AD Code (`RAZOR-000847 Mumbai`), purpose code `P0802`, UTR, FX rate, invoice linkage, hash, e-BRC validity note. Generated via `jspdf` (would be `reportlab` in Python FastAPI variant — same data contract). Preview component at `FircCertificateTemplate.tsx`.
 
 ---
 
-## 📈 Future → Production
+## Future → Production
 
 - Swap `lib/db.ts` for Prisma + Supabase Postgres + Row-Level Security.
 - Add vector DB (Pinecone) for invoice semantic search; store embeddings of parsed invoices.
@@ -266,7 +266,7 @@ RBI FED Master Direction compliant fields: AD Code (`RAZOR-000847 Mumbai`), purp
 
 ---
 
-## 👩‍💻 Author
+## Author
 
 Built for **Razorpay Open Track Internship** — Bengaluru, Aug 2025. Single-command boot, high-tech fintech UI (Razorpay dark/light theme), agentic routing with explainability, and a compliance artifact you can download.
 
@@ -274,7 +274,7 @@ Built for **Razorpay Open Track Internship** — Bengaluru, Aug 2025. Single-com
 
 — RazorAgent FX
 
-## 📄 Documentation
+## Documentation
 
 - [SETUP.md](SETUP.md) - Detailed setup and configuration guide
 - [README.md](README.md) - Project overview and features
